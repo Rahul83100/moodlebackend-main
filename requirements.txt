@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+google-generativeai
+sentence-transformers
+scikit-learn
+pymilvus
+rank_bm25
+python-multipart

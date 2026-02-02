@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  milvus:
+    image: milvusdb/milvus:v2.3.3
+    container_name: milvus-standalone
+    command: ["milvus", "run", "standalone"]
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      COMMON_STORAGETYPE: local
+    volumes:
+      - milvus_data:/var/lib/milvus
+    networks:
+      - milvus-net
+
+  attu:
+    image: zilliz/attu:latest
+    container_name: attu
+    ports:
+      - "8000:3000"
+    environment:
+      MILVUS_URL: milvus-standalone:19530
+    depends_on:
+      - milvus
+    networks:
+      - milvus-net
+
+volumes:
+  milvus_data:
+
+networks:
+  milvus-net:
+    driver: bridge

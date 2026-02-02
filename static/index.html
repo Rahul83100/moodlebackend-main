@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Voyage</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Background Orbs -->
+    <div
+        style="position: absolute; top: -10%; left: -10%; width: 500px; height: 500px; background: purple; filter: blur(150px); opacity: 0.3; border-radius: 50%;">
+    </div>
+    <div
+        style="position: absolute; bottom: -10%; right: -10%; width: 500px; height: 500px; background: blue; filter: blur(150px); opacity: 0.3; border-radius: 50%;">
+    </div>
+
+    <div class="container">
+
+        <!-- LOGIN VIEW (Now just a landing/error state if no ID is provided) -->
+        <div id="login-view" class="glass-card fade-in" style="max-width: 500px; margin: 0 auto;">
+            <h1>Knowledge Voyage</h1>
+            <p class="subtitle">Session ID Required.</p>
+            <p style="text-align: center;">Please provide a Session ID in the URL (e.g., <code>?id=1</code>).</p>
+
+            <div style="margin-top: 2rem; border-top: 1px solid var(--card-border); padding-top: 1.5rem;">
+                <h3 style="margin-top: 0; color: var(--accent); text-align: center;">Upload New Content</h3>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <input type="number" id="upload-index-id" placeholder="Enter Index ID (e.g. 5)" />
+                    <input type="file" id="upload-file" accept=".txt"
+                        style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 12px; border: 1px solid var(--card-border); color: white;" />
+                    <button onclick="uploadFile()">Upload & Ingest</button>
+                    <p id="upload-status" style="text-align: center; font-size: 0.9rem; min-height: 1.2em;"></p>
+                </div>
+            </div>
+
+            <p id="error-msg" style="color: #ef4444; margin-top: 1rem; display: none; text-align: center;"></p>
+        </div>
+
+        <!-- SESSION VIEW -->
+        <!-- SESSION VIEW -->
+        <div id="session-view" class="glass-card hidden">
+            <!-- Left Column: Source Content -->
+            <div class="session-left">
+                <h3 style="margin-top: 0; color: var(--accent); margin-bottom: 1rem;">Source Data</h3>
+                <div id="initial-content" class="source-content">
+                    <!-- Context loads here -->
+                </div>
+            </div>
+
+            <!-- Right Column: Chat Interface -->
+            <div class="session-right">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2 style="margin: 0; font-size: 1.5rem;">Session <span id="session-id"
+                            style="color: var(--accent);">#</span></h2>
+                    <button onclick="exitSession()"
+                        style="padding: 0.5rem 1rem; background: rgba(255,255,255,0.1); color: white;">Exit</button>
+                </div>
+
+                <div id="chat-interface" style="display: flex; flex-direction: column; flex: 1;">
+                    <div id="chat-box" class="chat-box">
+                        <!-- Messages go here -->
+                    </div>
+
+                    <div class="input-group" style="margin-top: auto; align-items: flex-end;">
+                        <textarea id="chat-input" placeholder="Ask a relevant question..." rows="1"></textarea>
+                        <button onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
