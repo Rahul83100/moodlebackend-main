@@ -8,7 +8,7 @@ services:
       - "8001:8000" # Host 8001 -> Container 8000
     environment:
       - MILVUS_URI=http://milvus-standalone:19530
-      - GEMINI_API_KEY=AIzaSyDczP5g4Ptaz6xU9COZKidCWNj8Ipn_vWg
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
       - milvus
     volumes:
