@@ -25,11 +25,13 @@ app.add_middleware(
 )
 
 # Load Environment Variables
-load_dotenv()
+# Load Environment Variables
+load_dotenv(override=True)
 
 # Configure Gemini API
 GENAI_KEY = os.getenv("GEMINI_API_KEY")
 if GENAI_KEY:
+    print(f"[DEBUG] Loaded GEMINI_API_KEY: {GENAI_KEY[:5]}... (Length: {len(GENAI_KEY)})")
     genai.configure(api_key=GENAI_KEY)
 else:
     print("[WARNING] GEMINI_API_KEY not found in .env")
@@ -46,9 +48,19 @@ client = MilvusClient(uri=uri)
 COLLECTION_NAME = "knowledge_base"
 
 # Ensure collection exists
+# Ensure collection exists
 if not client.has_collection(COLLECTION_NAME):
-    print(f"[ERROR] Collection '{COLLECTION_NAME}' not found. Run 'python ingest.py'.")
-    # We won't exit here to allow server to start, but requests will fail.
+    print(f"[INFO] Collection '{COLLECTION_NAME}' not found. Creating it...")
+    client.create_collection(
+        collection_name=COLLECTION_NAME,
+        dimension=384,
+        primary_field_name="id",
+        id_type="int",
+        vector_field_name="vector",
+        metric_type="COSINE",
+        auto_id=False
+    )
+    print(f"[INFO] Created Milvus collection: {COLLECTION_NAME}")
 
 # --------------------------
 # Models
@@ -199,7 +211,9 @@ async def chat(request: ChatRequest):
             response = llm_model.generate_content(prompt)
             final_answer = response.text
         except Exception as e:
-            print(f"[ERROR] Gemini API Error: {e}")
+            print(f"[ERROR] Gemini API Error: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             final_answer = f"Error generating answer. Fallback context: {context_snippet}"
 
     return {
@@ -212,22 +226,50 @@ async def chat(request: ChatRequest):
 @app.post("/api/upload")
 async def upload_file(index_id: int = Form(...), file: UploadFile = File(...)):
     """
-    Upload a text file associated with an index ID and re-ingest data.
+    Receive file, embed on-the-fly, and upsert into Milvus.
+    No local storage, no full re-ingestion.
     """
     try:
-        file_location = f"data/{index_id}.txt"
+        # 1. Read file content from memory
+        content_bytes = await file.read()
+        text_content = content_bytes.decode("utf-8").strip()
         
-        # Save the uploaded file
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # Trigger ingestion to update the vector DB
-        # Note: In a production app, this should be a background task
-        ingest_all()
+        if not text_content:
+            return JSONResponse(status_code=400, content={"message": "Empty file"})
+
+        print(f"[INFO] Processing upload for Index {index_id} ({file.filename})")
+
+        # 2. Embed content
+        embedding = model.encode(text_content).tolist()
+
+        # 3. Prepare data
+        data = [{
+            "id": index_id,
+            "vector": embedding,
+            "text": text_content,
+            "metadata_source": file.filename
+        }]
+
+        # 4. Upsert (Insert/Update) into Milvus
+        # Ensure collection exists
+        if not client.has_collection(COLLECTION_NAME):
+             client.create_collection(
+                collection_name=COLLECTION_NAME,
+                dimension=384,
+                primary_field_name="id",
+                id_type="int",
+                vector_field_name="vector",
+                metric_type="COSINE",
+                auto_id=False
+            )
+
+        client.upsert(collection_name=COLLECTION_NAME, data=data)
         
-        return JSONResponse(status_code=200, content={"message": f"File uploaded and ingested for Index {index_id}"})
+        return JSONResponse(status_code=200, content={"message": f"Successfully ingested context for Course {index_id}"})
+
     except Exception as e:
         print(f"[ERROR] Upload failed: {e}")
+        # Return 500 but also print invalid characters issue if any
         raise HTTPException(status_code=500, detail=str(e))
 
 
