@@ -1,6 +1,23 @@
 version: "3.9"
 
 services:
+  chatbot-backend:
+    build: .
+    container_name: moodle-chatbot
+    ports:
+      - "8001:8000" # Host 8001 -> Container 8000
+    environment:
+      - MILVUS_URI=http://milvus-standalone:19530
+      - GEMINI_API_KEY=AIzaSyDczP5g4Ptaz6xU9COZKidCWNj8Ipn_vWg
+    depends_on:
+      - milvus
+    volumes:
+      - ./data:/app/data # Persist ingested data
+      - ./static:/app/static # Hot reload static files
+    networks:
+      - milvus-net
+    restart: always
+
   milvus:
     image: milvusdb/milvus:v2.3.3
     container_name: milvus-standalone
@@ -16,12 +33,17 @@ services:
       - milvus_data:/var/lib/milvus
     networks:
       - milvus-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   attu:
     image: zilliz/attu:latest
     container_name: attu
     ports:
-      - "8000:3000"
+      - "8000:3000" # Host 8000 -> Container 3000 (Attu GUI)
     environment:
       MILVUS_URL: milvus-standalone:19530
     depends_on:

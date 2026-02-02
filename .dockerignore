@@ -1,5 +1,9 @@
 __pycache__
 venv
-.env
 .git
 .gitignore
+.env
+*.pyc
+*.pyo
+*.pyd
+.DS_Store

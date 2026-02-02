@@ -1,5 +1,5 @@
 # Use official Python runtime as a parent image
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -14,7 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Expose port 8000
+# Create data directory if it doesn't exist
+RUN mkdir -p data
+
+# Expose port 8000 (internal)
 EXPOSE 8000
 
 # Define environment variable for unbuffered output
