@@ -9,6 +9,7 @@ services:
     environment:
       - MILVUS_URI=http://milvus-standalone:19530
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     depends_on:
       - milvus
     volumes:
