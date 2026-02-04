@@ -16,17 +16,23 @@ from ingest import ingest_all
 # Initialize App
 app = FastAPI()
 
+# Load Environment Variables
+load_dotenv(override=True)
+
+# CORS Configuration
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+if allowed_origins_raw == "*":
+    origins = ["*"]
+else:
+    origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Load Environment Variables
-# Load Environment Variables
-load_dotenv(override=True)
 
 # Configure Gemini API
 GENAI_KEY = os.getenv("GEMINI_API_KEY")
