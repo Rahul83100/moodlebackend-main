@@ -4,79 +4,306 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Knowledge Voyage</title>
+    <title>Admin Panel | Knowledge Voyage</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --accent: #38bdf8;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Background Orbs */
+        .orb {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            filter: blur(150px);
+            opacity: 0.3;
+            border-radius: 50%;
+            z-index: -1;
+        }
+
+        .orb-1 {
+            top: -10%;
+            left: -10%;
+            background: purple;
+        }
+
+        .orb-2 {
+            bottom: -10%;
+            right: -10%;
+            background: blue;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            padding: 2rem;
+            z-index: 10;
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            margin: 0 0 1rem;
+            font-size: 2rem;
+            text-align: center;
+            background: linear-gradient(to right, #fff, var(--accent));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        input[type="password"],
+        input[type="file"] {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem;
+            color: white;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="password"]:focus {
+            border-color: var(--accent);
+        }
+
+        button {
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: 12px;
+            padding: 1rem;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #status-container {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            font-size: 0.85rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #status-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
 </head>
 
 <body>
-
-    <!-- Background Orbs -->
-    <div
-        style="position: absolute; top: -10%; left: -10%; width: 500px; height: 500px; background: purple; filter: blur(150px); opacity: 0.3; border-radius: 50%;">
-    </div>
-    <div
-        style="position: absolute; bottom: -10%; right: -10%; width: 500px; height: 500px; background: blue; filter: blur(150px); opacity: 0.3; border-radius: 50%;">
-    </div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
 
     <div class="container">
-
-        <!-- LOGIN VIEW (Now just a landing/error state if no ID is provided) -->
-        <div id="login-view" class="glass-card fade-in" style="max-width: 500px; margin: 0 auto;">
+        <div class="glass-card fade-in">
             <h1>Knowledge Voyage</h1>
-            <p class="subtitle">Session ID Required.</p>
-            <p style="text-align: center;">Please provide a Session ID in the URL (e.g., <code>?id=1</code>).</p>
 
-            <div style="margin-top: 2rem; border-top: 1px solid var(--card-border); padding-top: 1.5rem;">
-                <h3 style="margin-top: 0; color: var(--accent); text-align: center;">Upload New Content</h3>
-                <div style="display: flex; flex-direction: column; gap: 1rem;">
-                    <input type="number" id="upload-index-id" placeholder="Enter Index ID (e.g. 5)" />
-                    <input type="file" id="upload-file" accept=".txt"
-                        style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 12px; border: 1px solid var(--card-border); color: white;" />
-                    <button onclick="uploadFile()">Upload & Ingest</button>
-                    <p id="upload-status" style="text-align: center; font-size: 0.9rem; min-height: 1.2em;"></p>
+            <!-- Login View -->
+            <div id="login-view">
+                <p class="subtitle">Admin Access Required</p>
+                <div class="input-group">
+                    <input type="password" id="admin-password" placeholder="Enter Admin Password" />
+                    <button onclick="verifyPassword()">Go Inside</button>
+                    <p id="login-error"
+                        style="color: #ef4444; font-size: 0.85rem; text-align: center; margin-top: -1rem; display: none;">
+                    </p>
                 </div>
             </div>
 
-            <p id="error-msg" style="color: #ef4444; margin-top: 1rem; display: none; text-align: center;"></p>
-        </div>
+            <!-- Upload View -->
+            <div id="upload-view" class="hidden">
+                <p class="subtitle">Select files to bulk upload. Filenames must be numeric IDs (e.g.
+                    <code>101.txt</code>).
+                </p>
+                <div class="input-group">
+                    <input type="file" id="bulk-files" multiple accept=".txt" />
+                    <button id="upload-btn" onclick="performUpload()">Upload & Ingest</button>
 
-        <!-- SESSION VIEW -->
-        <!-- SESSION VIEW -->
-        <div id="session-view" class="glass-card hidden">
-            <!-- Left Column: Source Content -->
-            <div class="session-left">
-                <h3 style="margin-top: 0; color: var(--accent); margin-bottom: 1rem;">Source Data</h3>
-                <div id="initial-content" class="source-content">
-                    <!-- Context loads here -->
-                </div>
-            </div>
-
-            <!-- Right Column: Chat Interface -->
-            <div class="session-right">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h2 style="margin: 0; font-size: 1.5rem;">Session <span id="session-id"
-                            style="color: var(--accent);">#</span></h2>
-                    <button onclick="exitSession()"
-                        style="padding: 0.5rem 1rem; background: rgba(255,255,255,0.1); color: white;">Exit</button>
-                </div>
-
-                <div id="chat-interface" style="display: flex; flex-direction: column; flex: 1;">
-                    <div id="chat-box" class="chat-box">
-                        <!-- Messages go here -->
-                    </div>
-
-                    <div class="input-group" style="margin-top: auto; align-items: flex-end;">
-                        <textarea id="chat-input" placeholder="Ask a relevant question..." rows="1"></textarea>
-                        <button onclick="sendMessage()">Send</button>
+                    <div id="status-container" class="hidden">
+                        <ul id="status-list"></ul>
                     </div>
                 </div>
             </div>
         </div>
-
     </div>
 
-    <script src="script.js"></script>
+    <script>
+        let correctPassword = "";
+
+        async function verifyPassword() {
+            const pwdInput = document.getElementById('admin-password');
+            const errorMsg = document.getElementById('login-error');
+            const btn = event.target;
+
+            const pwd = pwdInput.value;
+            if (!pwd) return;
+
+            btn.disabled = true;
+            errorMsg.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('password', pwd);
+
+            try {
+                const response = await fetch('/api/verify-password', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    correctPassword = pwd;
+                    document.getElementById('login-view').classList.add('hidden');
+                    document.getElementById('upload-view').classList.remove('hidden');
+                } else {
+                    errorMsg.innerText = "Invalid password. Access denied.";
+                    errorMsg.style.display = 'block';
+                }
+            } catch (e) {
+                errorMsg.innerText = "Connection error.";
+                errorMsg.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function performUpload() {
+            const fileInput = document.getElementById('bulk-files');
+            const statusContainer = document.getElementById('status-container');
+            const statusList = document.getElementById('status-list');
+            const btn = document.getElementById('upload-btn');
+
+            if (fileInput.files.length === 0) {
+                alert("Please select files first.");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+            statusContainer.classList.remove('hidden');
+            statusList.innerHTML = '<li>Uploading...</li>';
+
+            const formData = new FormData();
+            formData.append('password', correctPassword);
+            for (let i = 0; i < fileInput.files.length; i++) {
+                formData.append('files', fileInput.files[i]);
+            }
+
+            try {
+                const response = await fetch('/api/bulk-upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                statusList.innerHTML = '';
+
+                let hasFailures = false;
+                data.results.forEach(res => {
+                    const li = document.createElement('li');
+                    li.style.marginBottom = '0.5rem';
+                    if (res.status === 'success') {
+                        li.innerHTML = `<span style="color: #10b981;">✓</span> <b>${res.filename}</b>: Success (ID: ${res.index_id})`;
+                    } else {
+                        hasFailures = true;
+                        const icon = res.status === 'skipped' ? '<span style="color: #f59e0b;">!</span>' : '<span style="color: #ef4444;">✗</span>';
+                        li.innerHTML = `${icon} <b>${res.filename}</b>: ${res.reason} <br> <span style="color: #94a3b8; font-size: 0.8rem; margin-left: 1.2rem;">Please rename and reupload.</span>`;
+                    }
+                    statusList.appendChild(li);
+                });
+
+                if (hasFailures) {
+                    const summary = document.createElement('li');
+                    summary.style.marginTop = '1rem';
+                    summary.style.color = '#f59e0b';
+                    summary.style.fontWeight = 'bold';
+                    summary.innerHTML = "Note: Some files were not processed. Please check the list above, rename them properly, and reupload.";
+                    statusList.appendChild(summary);
+                }
+            } catch (e) {
+                statusList.innerHTML = `<li style="color: #ef4444;">Upload failed: ${e.message}</li>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Upload & Ingest";
+            }
+        }
+    </script>
 </body>
 
 </html>

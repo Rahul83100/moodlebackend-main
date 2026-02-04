@@ -12,6 +12,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import shutil
 from ingest import ingest_all
+from typing import List
 
 # Initialize App
 app = FastAPI()
@@ -245,18 +246,43 @@ async def upload_file(index_id: int = Form(...), file: UploadFile = File(...)):
 
         print(f"[INFO] Processing upload for Index {index_id} ({file.filename})")
 
-        # 2. Embed content
-        embedding = model.encode(text_content).tolist()
+        # 2. Check for existing data in Milvus
+        try:
+            results = client.get(
+                collection_name=COLLECTION_NAME,
+                ids=[index_id]
+            )
+        except Exception as e:
+            print(f"[WARNING] Error checking existing data: {e}")
+            results = []
 
-        # 3. Prepare data
+        if results:
+            print(f"[INFO] Index {index_id} already exists. Appending new content.")
+            existing_text = results[0].get("text", "")
+            # Combine existing and new text
+            combined_text = existing_text + "\n\n" + text_content
+            text_to_embed = combined_text
+        else:
+            text_to_embed = text_content
+
+        # 2.5 Truncate text to stay within Milvus dynamic field limit (65536 chars)
+        # We use 60000 to be safe and leave room for other metadata
+        if len(text_to_embed) > 60000:
+            print(f"[WARNING] Text too long ({len(text_to_embed)} chars). Truncating to 60000.")
+            text_to_embed = text_to_embed[:60000]
+
+        # 3. Embed content
+        embedding = model.encode(text_to_embed).tolist()
+
+        # 4. Prepare data
         data = [{
             "id": index_id,
             "vector": embedding,
-            "text": text_content,
+            "text": text_to_embed,
             "metadata_source": file.filename
         }]
 
-        # 4. Upsert (Insert/Update) into Milvus
+        # 5. Upsert (Insert/Update) into Milvus
         # Ensure collection exists
         if not client.has_collection(COLLECTION_NAME):
              client.create_collection(
@@ -271,12 +297,98 @@ async def upload_file(index_id: int = Form(...), file: UploadFile = File(...)):
 
         client.upsert(collection_name=COLLECTION_NAME, data=data)
         
-        return JSONResponse(status_code=200, content={"message": f"Successfully ingested context for Course {index_id}"})
+        return JSONResponse(status_code=200, content={"message": f"Successfully updated index {index_id} with new content"})
 
     except Exception as e:
         print(f"[ERROR] Upload failed: {e}")
         # Return 500 but also print invalid characters issue if any
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/verify-password")
+async def verify_password(password: str = Form(...)):
+    """
+    Verify the admin password.
+    """
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if not admin_password or password != admin_password:
+        raise HTTPException(status_code=403, detail="Invalid admin password")
+    return {"status": "success"}
+
+@app.post("/api/bulk-upload")
+async def bulk_upload_files(
+    files: List[UploadFile] = File(...),
+    password: str = Form(...)
+):
+    """
+    Receive multiple files, extract index_id from filename, 
+    embed content, and upsert into Milvus. Password protected.
+    """
+    # Verify password
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if not admin_password or password != admin_password:
+        raise HTTPException(status_code=403, detail="Invalid admin password")
+
+    results = []
+    for file in files:
+        file_name = file.filename
+        try:
+            # Extract ID from filename (e.g. "123.txt" -> 123)
+            base_name = os.path.splitext(file_name)[0]
+            index_id = int(base_name)
+        except ValueError:
+            results.append({"filename": file_name, "status": "skipped", "reason": "Improper filename: must be numeric ID (e.g. 101.txt)"})
+            continue
+
+        try:
+            # 1. Read file content
+            content_bytes = await file.read()
+            text_content = content_bytes.decode("utf-8").strip()
+            
+            if not text_content:
+                results.append({"filename": file_name, "status": "failed", "reason": "Empty file"})
+                continue
+
+            # 2. Check for existing data in Milvus
+            try:
+                existing_results = client.get(
+                    collection_name=COLLECTION_NAME,
+                    ids=[index_id]
+                )
+            except Exception:
+                existing_results = []
+
+            if existing_results:
+                existing_text = existing_results[0].get("text", "")
+                text_to_embed = existing_text + "\n\n" + text_content
+            else:
+                text_to_embed = text_content
+
+            # 2.5 Truncate text to stay within Milvus dynamic field limit (65536 chars)
+            if len(text_to_embed) > 60000:
+                print(f"[WARNING] Text too long for {file_name} ({len(text_to_embed)} chars). Truncating to 60000.")
+                text_to_embed = text_to_embed[:60000]
+
+            # 3. Embed content
+            embedding = model.encode(text_to_embed).tolist()
+
+            # 4. Prepare data
+            data = [{
+                "id": index_id,
+                "vector": embedding,
+                "text": text_to_embed,
+                "metadata_source": file_name
+            }]
+
+            # 5. Upsert into Milvus
+            client.upsert(collection_name=COLLECTION_NAME, data=data)
+            results.append({"filename": file_name, "index_id": index_id, "status": "success"})
+
+        except Exception as e:
+            print(f"[ERROR] Bulk upload failed for {file_name}: {e}")
+            results.append({"filename": file_name, "status": "failed", "reason": str(e)})
+
+    return JSONResponse(status_code=200, content={"results": results})
 
 
 @app.get("/")
