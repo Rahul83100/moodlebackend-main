@@ -4,6 +4,7 @@ import os
 import glob
 
 from dotenv import load_dotenv
+from logger_config import logger
 
 load_dotenv()
 
@@ -26,11 +27,13 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100):
 
 def ingest_all():
     # Initialize Milvus
-    client = MilvusClient(uri=URI)
+    user = os.getenv("MILVUS_USER", "root")
+    password = os.getenv("MILVUS_PASSWORD", "Milvus")
+    client = MilvusClient(uri=URI, user=user, password=password)
 
     # Create collection if not exists
     if not client.has_collection(collection_name=COLLECTION_NAME):
-        print(f"[INFO] Creating collection: {COLLECTION_NAME}")
+        logger.info(f"Creating collection: {COLLECTION_NAME}")
         client.create_collection(
             collection_name=COLLECTION_NAME,
             dimension=EMBEDDING_DIM,
@@ -41,17 +44,18 @@ def ingest_all():
             auto_id=True
         )
     else:
-        print(f"[INFO] Using existing collection: {COLLECTION_NAME}")
+        logger.info(f"Using existing collection: {COLLECTION_NAME}")
 
-    print(f"[INFO] Created Milvus collection: {COLLECTION_NAME}")
+    logger.info(f"Created Milvus collection: {COLLECTION_NAME}")
 
     # Load data from text files in 'data' folder
-    print("[INFO] Loading data from 'data/' directory...")
+    logger.info("Loading data from 'data/' directory...")
 
     txt_files = glob.glob("data/*.txt")
 
     if not txt_files:
-        print("[WARNING] No text files found in 'data/'")
+        logger.warning("No text files found in 'data/'")
+        return
 
     data = []
 
@@ -60,17 +64,17 @@ def ingest_all():
         try:
             idx = int(os.path.splitext(filename)[0])
         except ValueError:
-            print(f"[SKIP] Ignoring non-numeric filename: {filename}")
+            logger.warning(f"Ignoring non-numeric filename: {filename}")
             continue
 
-        print(f" -> Processing Index {idx} ({filename})")
+        logger.info(f"Processing Index {idx} ({filename})")
         
         chunks = chunk_text(text)
         total_chunks = len(chunks)
         if not chunks:
             continue
 
-        print(f"    - Total chunks: {total_chunks}")
+        logger.info(f"Total chunks: {total_chunks}")
 
         # Batch Embed and Insert in bursts
         BURST_SIZE = 200
@@ -93,9 +97,9 @@ def ingest_all():
             client.insert(collection_name=COLLECTION_NAME, data=data_to_insert)
             
             completed = min(i + BURST_SIZE, total_chunks)
-            print(f"    [PROGRESS] {completed}/{total_chunks} chunks ingested...")
+            logger.info(f"[{filename}] {completed}/{total_chunks} chunks ingested...")
         
-        print(f"    [SUCCESS] Finished {filename}")
+        logger.info(f"Finished {filename}")
 
 if __name__ == "__main__":
     ingest_all()

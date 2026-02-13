@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import shutil
 from ingest import ingest_all
 from typing import List
+from logger_config import logger
 
 # Initialize App
 app = FastAPI()
@@ -38,25 +39,47 @@ app.add_middleware(
 # Configure Gemini API
 GENAI_KEY = os.getenv("GEMINI_API_KEY")
 if GENAI_KEY:
-    print(f"[DEBUG] Loaded GEMINI_API_KEY: {GENAI_KEY[:5]}... (Length: {len(GENAI_KEY)})")
+    logger.info(f"Loaded GEMINI_API_KEY: {GENAI_KEY[:5]}... (Length: {len(GENAI_KEY)})")
     genai.configure(api_key=GENAI_KEY)
 else:
-    print("[WARNING] GEMINI_API_KEY not found in .env")
+    logger.warning("GEMINI_API_KEY not found in .env")
+
+# Gemini Safety Settings
+SAFETY_SETTINGS = [
+    {
+        "category": "HARM_CATEGORY_HARASSMENT",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+    },
+    {
+        "category": "HARM_CATEGORY_HATE_SPEECH",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+    },
+    {
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+    },
+    {
+        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+    },
+]
 
 # --------------------------
 # Load Model & Database
 # --------------------------
-print("[INFO] Loading Model...")
+logger.info("Loading Model...")
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-print("[INFO] Connecting to MilvusDB...")
+logger.info("Connecting to MilvusDB...")
 uri = os.getenv("MILVUS_URI", "http://localhost:19530")
-client = MilvusClient(uri=uri)
+user = os.getenv("MILVUS_USER", "root")
+password = os.getenv("MILVUS_PASSWORD", "Milvus")
+client = MilvusClient(uri=uri, user=user, password=password)
 COLLECTION_NAME = "knowledge_base"
 
 # Ensure collection exists
 if not client.has_collection(COLLECTION_NAME):
-    print(f"[INFO] Collection '{COLLECTION_NAME}' not found. Creating it...")
+    logger.info(f"Collection '{COLLECTION_NAME}' not found. Creating it...")
     client.create_collection(
         collection_name=COLLECTION_NAME,
         dimension=384,
@@ -66,9 +89,14 @@ if not client.has_collection(COLLECTION_NAME):
         metric_type="COSINE",
         auto_id=True
     )
-    print(f"[INFO] Created Milvus collection: {COLLECTION_NAME}")
+    logger.info(f"Created Milvus collection: {COLLECTION_NAME}")
 else:
-    print(f"[INFO] Using existing Milvus collection: {COLLECTION_NAME}")
+    logger.info(f"Using existing Milvus collection: {COLLECTION_NAME}")
+
+# Load the collection to memory for searching
+logger.info(f"Loading collection '{COLLECTION_NAME}'...")
+client.load_collection(COLLECTION_NAME)
+logger.info(f"Collection '{COLLECTION_NAME}' loaded successfully.")
 
 # --------------------------
 # Utilities
@@ -128,7 +156,7 @@ async def start_session(request: SessionRequest):
             output_fields=["text"]
         )
     except Exception as e:
-         print(f"[ERROR] Session lookup failed: {e}")
+         logger.error(f"Session lookup failed: {e}")
          results = []
 
     if not results:
@@ -165,51 +193,50 @@ async def chat(request: ChatRequest):
             output_fields=["text"]
         )
     except Exception as e:
-        print(f"[ERROR] Milvus Search Error: {e}")
+        logger.error(f"Milvus Search Error: {e}")
         search_results = [[]]
-
-    if not search_results or not search_results[0]:
-        return {
-            "relevance_score": "0.0%",
-            "breakdown": "Dense: 0.0% | BM25: 0.0%",
-            "answer": "I have not been trained on this course yet. Please upload course materials.", 
-            "context_used": False
-        }
 
     # 3. Re-Ranking Logic
     candidates = []
-    chunk_texts = [res['entity']['text'] for res in search_results[0]]
+    chunk_texts = [res['entity']['text'] for res in search_results[0]] if search_results and search_results[0] else []
     
-    # Initialize BM25 on the candidates
-    tokenized_chunks = [txt.lower().split() for txt in chunk_texts]
-    bm25 = BM25Okapi(tokenized_chunks)
-    bm25_scores = bm25.get_scores(query_tokens)
+    if chunk_texts:
+        # Initialize BM25 on the candidates
+        tokenized_chunks = [txt.lower().split() for txt in chunk_texts]
+        bm25 = BM25Okapi(tokenized_chunks)
+        bm25_scores = bm25.get_scores(query_tokens)
 
-    for i, res in enumerate(search_results[0]):
-        dense_score = max(0, res['distance']) * 100
-        # Normalize BM25 (simplified normalization for re-ranking)
-        raw_bm25 = bm25_scores[i]
-        bm25_percentage = max(0, min(100, (raw_bm25 * 15))) # Adjusted multiplier
-        
-        hybrid_score = (dense_score * 0.6) + (bm25_percentage * 0.4) # Slightly more BM25 weight
-        
-        candidates.append({
-            "text": res['entity']['text'],
-            "dense": dense_score,
-            "bm25": bm25_percentage,
-            "hybrid": hybrid_score
-        })
+        for i, res in enumerate(search_results[0]):
+            dense_score = max(0, res['distance']) * 100
+            # Normalize BM25 (simplified normalization for re-ranking)
+            raw_bm25 = bm25_scores[i]
+            bm25_percentage = max(0, min(100, (raw_bm25 * 15))) # Adjusted multiplier
+            
+            hybrid_score = (dense_score * 0.6) + (bm25_percentage * 0.4) # Slightly more BM25 weight
+            
+            candidates.append({
+                "text": res['entity']['text'],
+                "dense": dense_score,
+                "bm25": bm25_percentage,
+                "hybrid": hybrid_score
+            })
 
     # Sort by hybrid score and take top 5
     candidates.sort(key=lambda x: x['hybrid'], reverse=True)
     top_candidates = candidates[:5]
 
     # Calculate final display scores (average of top 5)
-    avg_hybrid = sum(c['hybrid'] for c in top_candidates) / len(top_candidates)
-    avg_dense = sum(c['dense'] for c in top_candidates) / len(top_candidates)
-    avg_bm25 = sum(c['bm25'] for c in top_candidates) / len(top_candidates)
+    if top_candidates:
+        avg_hybrid = sum(c['hybrid'] for c in top_candidates) / len(top_candidates)
+        avg_dense = sum(c['dense'] for c in top_candidates) / len(top_candidates)
+        avg_bm25 = sum(c['bm25'] for c in top_candidates) / len(top_candidates)
+        combined_context_text = "\n\n".join([c['text'] for c in top_candidates])
+    else:
+        avg_hybrid = 0.0
+        avg_dense = 0.0
+        avg_bm25 = 0.0
+        combined_context_text = ""
 
-    combined_context_text = "\n\n".join([c['text'] for c in top_candidates])
     context_snippet = combined_context_text
 
     # 7. Manage Conversation History
@@ -242,7 +269,9 @@ async def chat(request: ChatRequest):
             3. Use the Conversation History to handle follow-up questions (e.g., "tell me more" or "who was that?").
             4. Do NOT mention numerical course IDs or system IDs.
             5. If the question is "what is this about?", provide a focused summary of the themes found in the context.
-            6. If the context is empty/unrelated, say: "I don't have enough specific material to answer that accurately yet. Please check back as new content is uploaded!"
+            6. If the user uses VULGAR, OFFENSIVE, or INAPPROPRIATE language, IMMEDIATELY refuse to engage. Respond strictly with: "I am sorry, but I cannot engage in conversations using inappropriate language. Please keep our discussion respectful and academic."
+            7. If the question is related to the course materials or academic topics but the provided context does not contain the specific answer, you may answer using your internal knowledge. However, you MUST explicitly state that the information is from your internal knowledge and not from the provided materials. Start such answers with: "Based on my internal knowledge (as this specific detail isn't in the provided course materials)..."
+            8. If the question is COMPLETELY unrelated to any course materials, Christ University, or academic topics (e.g., asking for recipes, random facts, or non-academic help), use this fallback: "I don't have enough specific material to answer that accurately yet. Please check back as new content is uploaded!"
             
             Available Context:
             {context_snippet}
@@ -252,8 +281,13 @@ async def chat(request: ChatRequest):
             
             Answer:
             """
-            response = llm_model.generate_content(prompt)
-            final_answer = response.text
+            response = llm_model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
+            
+            # Check if response was blocked by safety filters
+            if not response.candidates or not response.candidates[0].content.parts:
+                final_answer = "I am sorry, but I cannot engage in conversations using inappropriate language. Please keep our discussion respectful and academic."
+            else:
+                final_answer = response.text
 
             # Update Session History
             SESSION_HISTORY[session_id].append({"role": "user", "parts": [request.question]})
@@ -264,10 +298,10 @@ async def chat(request: ChatRequest):
                 SESSION_HISTORY[session_id] = SESSION_HISTORY[session_id][-20:]
 
         except Exception as e:
-            print(f"[ERROR] Gemini API Error: {type(e).__name__}: {e}")
+            logger.error(f"Gemini API Error: {type(e).__name__}: {e}")
             import traceback
-            traceback.print_exc()
-            final_answer = f"Error generating answer. Fallback context: {context_snippet}"
+            logger.error(traceback.format_exc())
+            final_answer = "admin side issues please contact admin"
 
     return {
         "relevance_score": f"{avg_hybrid:.1f}%",
@@ -282,16 +316,16 @@ def process_and_ingest(index_id: int, text_content: str, filename: str):
     Handles massive files without high memory pressure.
     """
     try:
-        print(f"\n[BG-TASK START] Course: {index_id} | File: {filename}")
+        logger.info(f"Course: {index_id} | File: {filename}")
         
         # 1. Create chunks
         chunks = chunk_text(text_content)
         total_chunks = len(chunks)
         if not chunks:
-            print(f"[BG-TASK] No chunks created for {filename}")
+            logger.warning(f"No chunks created for {filename}")
             return
 
-        print(f"[BG-TASK] Total chunks to process: {total_chunks}")
+        logger.info(f"Total chunks to process: {total_chunks}")
 
         # 2. Process in Bursts (Streaming)
         BURST_SIZE = 200
@@ -318,14 +352,14 @@ def process_and_ingest(index_id: int, text_content: str, filename: str):
             # Log Progress
             completed = min(i + BURST_SIZE, total_chunks)
             percent = (completed / total_chunks) * 100
-            print(f"[BG-TASK PROGRESS] {filename}: {completed}/{total_chunks} chunks ({percent:.1f}%)")
+            logger.info(f"{filename}: {completed}/{total_chunks} chunks ({percent:.1f}%)")
 
-        print(f"[BG-TASK SUCCESS] Finished ingestion for {filename} ({total_chunks} chunks)\n")
+        logger.info(f"Finished ingestion for {filename} ({total_chunks} chunks)")
 
     except Exception as e:
-        print(f"[BG-TASK ERROR] Failed to process {filename}: {e}")
+        logger.error(f"Failed to process {filename}: {e}")
         import traceback
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
 
 @app.post("/api/upload")
 async def upload_file(
@@ -351,7 +385,7 @@ async def upload_file(
         })
 
     except Exception as e:
-        print(f"[ERROR] Upload request failed: {e}")
+        logger.error(f"Upload request failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

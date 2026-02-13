@@ -1,23 +1,26 @@
 version: "3.9"
 
 services:
-  # chatbot-backend:
-  #   build: .
-  #   container_name: moodle-chatbot
-  #   ports:
-  #     - "8001:8000" # Host 8001 -> Container 8000
-  #   environment:
-  #     - MILVUS_URI=http://milvus-standalone:19530
-  #     - GEMINI_API_KEY=${GEMINI_API_KEY}
-  #     - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-  #   depends_on:
-  #     - milvus
-  #   volumes:
-  #     - ./data:/app/data # Persist ingested data
-  #     - ./static:/app/static # Hot reload static files
-  #   networks:
-  #     - milvus-net
-  #   restart: always
+  chatbot-backend:
+    build: .
+    container_name: moodle-chatbot
+    ports:
+      - "8001:8000" # Host 8001 -> Container 8000
+    environment:
+      - MILVUS_URI=http://milvus-standalone:19530
+      - MILVUS_USER=${MILVUS_USER}
+      - MILVUS_PASSWORD=${MILVUS_PASSWORD}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+    depends_on:
+      - milvus
+    volumes:
+      - ./data:/app/data # Persist ingested data
+      - ./static:/app/static # Hot reload static files
+    networks:
+      - milvus-net
+    restart: always
 
   milvus:
     image: milvusdb/milvus:v2.3.3
@@ -30,6 +33,7 @@ services:
       ETCD_USE_EMBED: "true"
       ETCD_DATA_DIR: /var/lib/milvus/etcd
       COMMON_STORAGETYPE: local
+      COMMON_SECURITY_AUTHORIZATIONENABLED: "true"
     volumes:
       - milvus_data:/var/lib/milvus
     networks:
