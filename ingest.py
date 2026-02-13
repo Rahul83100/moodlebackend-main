@@ -13,23 +13,35 @@ EMBEDDING_DIM = 384
 COLLECTION_NAME = "knowledge_base"
 URI = os.getenv("MILVUS_URI", "http://localhost:19530")
 
+def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100):
+    if not text: return []
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start += (chunk_size - overlap)
+        if chunk_size <= overlap: break
+    return chunks
+
 def ingest_all():
     # Initialize Milvus
     client = MilvusClient(uri=URI)
 
     # Create collection if not exists
-    if client.has_collection(collection_name=COLLECTION_NAME):
-        client.drop_collection(collection_name=COLLECTION_NAME)
-
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
-        dimension=EMBEDDING_DIM,
-        primary_field_name="id",
-        id_type="int",
-        vector_field_name="vector",
-        metric_type="COSINE",
-        auto_id=False
-    )
+    if not client.has_collection(collection_name=COLLECTION_NAME):
+        print(f"[INFO] Creating collection: {COLLECTION_NAME}")
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            dimension=EMBEDDING_DIM,
+            primary_field_name="pk",
+            id_type="int",
+            vector_field_name="vector",
+            metric_type="COSINE",
+            auto_id=True
+        )
+    else:
+        print(f"[INFO] Using existing collection: {COLLECTION_NAME}")
 
     print(f"[INFO] Created Milvus collection: {COLLECTION_NAME}")
 
@@ -44,7 +56,6 @@ def ingest_all():
     data = []
 
     for file_path in txt_files:
-        # Extract ID from filename (e.g. "data/1.txt" -> 1)
         filename = os.path.basename(file_path)
         try:
             idx = int(os.path.splitext(filename)[0])
@@ -52,25 +63,39 @@ def ingest_all():
             print(f"[SKIP] Ignoring non-numeric filename: {filename}")
             continue
 
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read().strip()
-        
         print(f" -> Processing Index {idx} ({filename})")
         
-        embedding = model.encode(text).tolist()
+        chunks = chunk_text(text)
+        total_chunks = len(chunks)
+        if not chunks:
+            continue
 
-        data.append({
-            "id": idx,
-            "vector": embedding,
-            "text": text,
-            "metadata_source": filename
-        })
+        print(f"    - Total chunks: {total_chunks}")
 
-    if data:
-        client.insert(collection_name=COLLECTION_NAME, data=data)
-        print(f"[SUCCESS] Inserted {len(data)} documents into Milvus.")
-    else:
-        print("[WARNING] No data to insert.")
+        # Batch Embed and Insert in bursts
+        BURST_SIZE = 200
+        for i in range(0, total_chunks, BURST_SIZE):
+            burst_chunks = chunks[i : i + BURST_SIZE]
+            
+            # Batch Embed this burst
+            embeddings = model.encode(burst_chunks).tolist()
+
+            data_to_insert = []
+            for j, chunk in enumerate(burst_chunks):
+                data_to_insert.append({
+                    "course_id": idx,
+                    "vector": embeddings[j],
+                    "text": chunk,
+                    "metadata_source": filename
+                })
+
+            # Insert this burst
+            client.insert(collection_name=COLLECTION_NAME, data=data_to_insert)
+            
+            completed = min(i + BURST_SIZE, total_chunks)
+            print(f"    [PROGRESS] {completed}/{total_chunks} chunks ingested...")
+        
+        print(f"    [SUCCESS] Finished {filename}")
 
 if __name__ == "__main__":
     ingest_all()
