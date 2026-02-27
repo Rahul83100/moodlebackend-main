@@ -33,7 +33,7 @@ services:
       ETCD_USE_EMBED: "true"
       ETCD_DATA_DIR: /var/lib/milvus/etcd
       COMMON_STORAGETYPE: local
-      COMMON_SECURITY_AUTHORIZATIONENABLED: "true"
+      MILVUS_COMMON_SECURITY_AUTHORIZATION_ENABLED: "true"
     volumes:
       - milvus_data:/var/lib/milvus
     networks:
