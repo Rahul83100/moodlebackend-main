@@ -14,6 +14,8 @@ import shutil
 from ingest import ingest_all
 from typing import List
 from logger_config import logger
+from pypdf import PdfReader
+import io
 
 # Initialize App
 app = FastAPI()
@@ -316,8 +318,16 @@ def process_and_ingest(index_id: int, text_content: str, filename: str):
     Handles massive files without high memory pressure.
     """
     try:
-        logger.info(f"Course: {index_id} | File: {filename}")
-        
+        # 0. Delete existing entries for this file in this course to prevent duplicates
+        try:
+            client.delete(
+                collection_name=COLLECTION_NAME,
+                filter=f"course_id == {index_id} and metadata_source == '{filename}'"
+            )
+            logger.info(f"Cleared existing entries for {filename} in course {index_id}")
+        except Exception as delete_e:
+            logger.warning(f"Failed to clear existing entries (might not exist): {delete_e}")
+
         # 1. Create chunks
         chunks = chunk_text(text_content)
         total_chunks = len(chunks)
@@ -372,10 +382,26 @@ async def upload_file(
     """
     try:
         content_bytes = await file.read()
-        text_content = content_bytes.decode("utf-8").strip()
         
-        if not text_content:
-            return JSONResponse(status_code=400, content={"message": "Empty file"})
+        if file.filename.lower().endswith(".pdf"):
+            # Extract text from PDF
+            try:
+                pdf_reader = PdfReader(io.BytesIO(content_bytes))
+                text_content = ""
+                for page in pdf_reader.pages:
+                    text_content += page.extract_text() + "\n"
+            except Exception as pdf_e:
+                logger.error(f"Failed to extract text from PDF: {pdf_e}")
+                return JSONResponse(status_code=400, content={"message": f"Invalid PDF file: {pdf_e}"})
+        else:
+            # Assume text file
+            try:
+                text_content = content_bytes.decode("utf-8").strip()
+            except UnicodeDecodeError:
+                return JSONResponse(status_code=400, content={"message": "File is not valid UTF-8 text or PDF"})
+
+        if not text_content or not text_content.strip():
+            return JSONResponse(status_code=400, content={"message": "Empty file or no text extracted"})
 
         # Trigger background task
         background_tasks.add_task(process_and_ingest, index_id, text_content, file.filename)

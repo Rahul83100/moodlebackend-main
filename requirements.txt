@@ -7,3 +7,4 @@ scikit-learn
 pymilvus
 rank_bm25
 python-multipart
+pypdf
