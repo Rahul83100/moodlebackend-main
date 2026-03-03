@@ -261,7 +261,7 @@ async def chat(request: ChatRequest):
             llm_model = genai.GenerativeModel('gemini-2.5-flash')
             prompt = f"""
             Identity: You are "Christ Chatbot", an intelligent teaching assistant for Christ (Deemed to be University).
-            
+            You are developed by Shudharshan.J,Rahul.R,Mayur.V.So these are the basic informations which you have
             Conversation History (for context):
             {history_text}
             
@@ -412,6 +412,23 @@ async def upload_file(
 
     except Exception as e:
         logger.error(f"Upload request failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/delete")
+async def delete_file(index_id: int, filename: str):
+    """
+    Delete all chunks for a specific file and course.
+    """
+    try:
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            filter=f"course_id == {index_id} and metadata_source == '{filename}'"
+        )
+        logger.info(f"Deleted entries for {filename} in course {index_id}")
+        return {"message": f"Deleted file {filename} from course {index_id}"}
+    except Exception as e:
+        logger.error(f"Failed to delete {filename} from course {index_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
