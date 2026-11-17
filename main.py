@@ -192,7 +192,7 @@ async def chat(request: ChatRequest):
             data=[question_embedding],
             limit=20, # Wider window for re-ranking
             filter=f"course_id == {request.index_id}", 
-            output_fields=["text"]
+            output_fields=["text", "metadata_source"]
         )
     except Exception as e:
         logger.error(f"Milvus Search Error: {e}")
@@ -218,6 +218,7 @@ async def chat(request: ChatRequest):
             
             candidates.append({
                 "text": res['entity']['text'],
+                "source": res['entity'].get('metadata_source', 'Unknown Source'),
                 "dense": dense_score,
                 "bm25": bm25_percentage,
                 "hybrid": hybrid_score
@@ -227,12 +228,19 @@ async def chat(request: ChatRequest):
     candidates.sort(key=lambda x: x['hybrid'], reverse=True)
     top_candidates = candidates[:5]
 
+    # Extract unique sources
+    unique_sources = []
+    for c in top_candidates:
+        source = c.get('source')
+        if source and source != 'Unknown Source' and source not in unique_sources:
+            unique_sources.append(source)
+
     # Calculate final display scores (average of top 5)
     if top_candidates:
         avg_hybrid = sum(c['hybrid'] for c in top_candidates) / len(top_candidates)
         avg_dense = sum(c['dense'] for c in top_candidates) / len(top_candidates)
         avg_bm25 = sum(c['bm25'] for c in top_candidates) / len(top_candidates)
-        combined_context_text = "\n\n".join([c['text'] for c in top_candidates])
+        combined_context_text = "\n\n".join([f"[Source: {c['source']}]\n{c['text']}" for c in top_candidates])
     else:
         avg_hybrid = 0.0
         avg_dense = 0.0
@@ -261,7 +269,7 @@ async def chat(request: ChatRequest):
             llm_model = genai.GenerativeModel('gemini-2.5-flash')
             prompt = f"""
             Identity: You are "Christ Chatbot", an intelligent teaching assistant for Christ (Deemed to be University).
-            You are developed by Shudharshan.J,Rahul.R,Mayur.V.So these are the basic informations which you have
+            So these are the basic informations which you have
             Conversation History (for context):
             {history_text}
             
@@ -272,8 +280,8 @@ async def chat(request: ChatRequest):
             4. Do NOT mention numerical course IDs or system IDs.
             5. If the question is "what is this about?", provide a focused summary of the themes found in the context.
             6. If the user uses VULGAR, OFFENSIVE, or INAPPROPRIATE language, IMMEDIATELY refuse to engage. Respond strictly with: "I am sorry, but I cannot engage in conversations using inappropriate language. Please keep our discussion respectful and academic."
-            7. If the question is related to the course materials or academic topics but the provided context does not contain the specific answer, you may answer using your internal knowledge. However, you MUST explicitly state that the information is from your internal knowledge and not from the provided materials. Start such answers with: "Based on my internal knowledge (as this specific detail isn't in the provided course materials)..."
-            8. If the question is COMPLETELY unrelated to any course materials, Christ University, or academic topics (e.g., asking for recipes, random facts, or non-academic help), use this fallback: "I don't have enough specific material to answer that accurately yet. Please check back as new content is uploaded!"
+            7. You must strictly answer using ONLY the provided Available Context. If the user asks a question about course materials, academic topics, or details that are NOT in the provided context (such as questions belonging to a different course, or topics not covered in these specific documents), you MUST NOT answer it. Instead, respond strictly with: "I don't have enough specific material to answer that accurately yet. Please check back as new content is uploaded!"
+            8. If the question is completely unrelated to the course materials or academic topics, respond strictly with: "I don't have enough specific material to answer that accurately yet. Please check back as new content is uploaded!"
             
             Available Context:
             {context_snippet}
@@ -290,6 +298,16 @@ async def chat(request: ChatRequest):
                 final_answer = "I am sorry, but I cannot engage in conversations using inappropriate language. Please keep our discussion respectful and academic."
             else:
                 final_answer = response.text
+                
+                # Check for fallbacks/greetings before appending sources
+                is_fallback = (
+                    final_answer.startswith("Based on my internal knowledge") or 
+                    "I don't have enough specific material" in final_answer or
+                    "I am sorry, but I cannot engage" in final_answer
+                )
+                if unique_sources and not is_fallback:
+                    sources_str = ", ".join(unique_sources)
+                    final_answer += f"\n\n**Sources:** {sources_str}"
 
             # Update Session History
             SESSION_HISTORY[session_id].append({"role": "user", "parts": [request.question]})
@@ -305,11 +323,18 @@ async def chat(request: ChatRequest):
             logger.error(traceback.format_exc())
             final_answer = "admin side issues please contact admin"
 
+    is_fallback_response = (
+        "I don't have enough specific material" in final_answer or
+        "I am sorry, but I cannot engage" in final_answer or
+        "admin side issues" in final_answer
+    )
+
     return {
         "relevance_score": f"{avg_hybrid:.1f}%",
         "breakdown": f"Dense: {avg_dense:.1f}% | BM25: {avg_bm25:.1f}%",
         "answer": final_answer, 
-        "context_used": True
+        "sources": [] if is_fallback_response else (unique_sources if 'unique_sources' in locals() else []),
+        "context_used": not is_fallback_response
     }
 
 def process_and_ingest(index_id: int, text_content: str, filename: str):
